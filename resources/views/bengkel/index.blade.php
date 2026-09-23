@@ -113,7 +113,7 @@
                     </div>
                     <div class="form-group">
                         <label>Merek / tipe</label>
-                        <input type="text" name="merk_tipe" class="form-control" value="{{ old('merk_tipe') }}" placeholder="Vario 150 / Avanza" required>
+                        <input type="text" name="merk_tipe" class="form-control" value="{{ old('merk_tipe') }}" placeholder="Contoh: Vario 150 / Avanza" required>
                     </div>
                     <div class="form-group">
                         <label>Keluhan</label>
