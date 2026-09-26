@@ -105,15 +105,8 @@
                         <input type="text" name="nama_pemilik" class="form-control" value="{{ old('nama_pemilik') }}" placeholder="Nama Pelanggan" required>
                     </div>
                     <div class="form-group">
-                        <label>Jenis kendaraan</label>
-                        <select name="jenis_kendaraan" class="form-control">
-                            <option value="Motor" {{ old('jenis_kendaraan', 'Motor') === 'Motor' ? 'selected' : '' }}>Motor</option>
-                            <option value="Mobil" {{ old('jenis_kendaraan') === 'Mobil' ? 'selected' : '' }}>Mobil</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Merek / tipe</label>
-                        <input type="text" name="merk_tipe" class="form-control" value="{{ old('merk_tipe') }}" placeholder="Contoh: Vario 150 / Avanza" required>
+                        <label>Tipe motor</label>
+                        <input type="text" name="merk_tipe" class="form-control" value="{{ old('merk_tipe') }}" placeholder="Contoh: Vario 150" required>
                     </div>
                     <div class="form-group">
                         <label>Keluhan</label>

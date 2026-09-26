@@ -9,7 +9,7 @@ class BengkelSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Data Karyawan (Mekanik & Kasir)
+        // 1. Data Karyawan
         DB::table('karyawans')->insert([
             ['nama_karyawan' => 'Budi Santoso', 'jabatan' => 'Admin', 'no_hp' => '08123456789'],
             ['nama_karyawan' => 'Agus Mekanik', 'jabatan' => 'Mekanik', 'no_hp' => '08234567890'],

@@ -40,16 +40,32 @@
                 <i class="fas fa-list-ol"></i> <span>Antrean</span>
               </a>
             </li>
-            <li class="{{ request()->routeIs('bengkel.admin') ? 'active' : '' }}">
-              <a class="nav-link" href="{{ route('bengkel.admin') }}">
-                <i class="fas fa-tools"></i> <span>Mekanik</span>
-              </a>
-            </li>
-            <li class="{{ request()->routeIs('bengkel.kasir') ? 'active' : '' }}">
-              <a class="nav-link" href="{{ route('bengkel.kasir') }}">
-                <i class="fas fa-cash-register"></i> <span>Kasir</span>
-              </a>
-            </li>
+            @auth
+              <li class="{{ request()->routeIs('bengkel.admin') ? 'active' : '' }}">
+                <a class="nav-link" href="{{ route('bengkel.admin') }}">
+                  <i class="fas fa-tools"></i> <span>Admin & Mekanik</span>
+                </a>
+              </li>
+              <li class="{{ request()->routeIs('bengkel.kasir', 'kasir.struk') ? 'active' : '' }}">
+                <a class="nav-link" href="{{ route('bengkel.kasir') }}">
+                  <i class="fas fa-cash-register"></i> <span>Kasir</span>
+                </a>
+              </li>
+              <li>
+                <form action="{{ route('logout') }}" method="POST" class="px-3 py-2">
+                  @csrf
+                  <button type="submit" class="btn btn-link nav-link p-0">
+                    <i class="fas fa-sign-out-alt"></i> <span>Keluar</span>
+                  </button>
+                </form>
+              </li>
+            @else
+              <li class="{{ request()->routeIs('login') ? 'active' : '' }}">
+                <a class="nav-link" href="{{ route('login') }}">
+                  <i class="fas fa-sign-in-alt"></i> <span>Login Petugas</span>
+                </a>
+              </li>
+            @endauth
           </ul>
         </aside>
       </div>

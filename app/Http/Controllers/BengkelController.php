@@ -32,7 +32,6 @@ class BengkelController extends Controller
         $validated = $request->validate([
             'plat_nomor' => ['required', 'string', 'max:20'],
             'nama_pemilik' => ['required', 'string', 'max:255'],
-            'jenis_kendaraan' => ['required', Rule::in(['Motor', 'Mobil'])],
             'merk_tipe' => ['required', 'string', 'max:255'],
             'keluhan' => ['required', 'string'],
         ]);
@@ -44,7 +43,7 @@ class BengkelController extends Controller
             ['plat_nomor' => $validated['plat_nomor']],
             [
                 'nama_pemilik' => $validated['nama_pemilik'],
-                'jenis_kendaraan' => $validated['jenis_kendaraan'],
+                'jenis_kendaraan' => 'Motor',
                 'merk_tipe' => $validated['merk_tipe'],
             ]
         );
@@ -73,6 +72,43 @@ class BengkelController extends Controller
         $mekaniks = Karyawan::where('jabatan', 'Mekanik')->get();
 
         return view('bengkel.admin', compact('antreans', 'mekaniks'));
+    }
+
+    // Tambahkan data mekanik baru.
+    public function storeMekanik(Request $request)
+    {
+        $validated = $request->validate([
+            'nama_karyawan' => ['required', 'string', 'max:255'],
+            'no_hp' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        Karyawan::create($validated + ['jabatan' => 'Mekanik']);
+
+        return redirect()->route('bengkel.admin')->with('success', 'Data mekanik berhasil ditambahkan.');
+    }
+
+    // Perbarui data mekanik yang dipilih.
+    public function updateMekanik(Request $request, Karyawan $mekanik)
+    {
+        abort_unless($mekanik->jabatan === 'Mekanik', 404);
+
+        $validated = $request->validate([
+            'nama_karyawan' => ['required', 'string', 'max:255'],
+            'no_hp' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $mekanik->update($validated);
+
+        return redirect()->route('bengkel.admin')->with('success', 'Data mekanik berhasil diperbarui.');
+    }
+
+    // Hapus mekanik; antrean lama tetap tersimpan tanpa penugasan.
+    public function destroyMekanik(Karyawan $mekanik)
+    {
+        abort_unless($mekanik->jabatan === 'Mekanik', 404);
+        $mekanik->delete();
+
+        return redirect()->route('bengkel.admin')->with('success', 'Data mekanik berhasil dihapus.');
     }
 
     // Update Mekanik & Status Servis
@@ -109,24 +145,35 @@ class BengkelController extends Controller
     public function bayar(Request $request, $id)
     {
         $validated = $request->validate([
-            'id_kasir' => ['required', 'exists:karyawans,id'],
-            'total_biaya' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
+            'id_kasir' => ['required', Rule::exists('karyawans', 'id')->where('jabatan', 'Kasir')],
+            'uang_dibayar' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'jasa_ids' => ['nullable', 'array'],
             'jasa_ids.*' => ['integer', 'distinct', 'exists:jasas,id'],
             'sparepart_ids' => ['nullable', 'array'],
             'sparepart_ids.*' => ['integer', 'distinct', 'exists:spareparts,id'],
         ]);
 
-        DB::transaction(function () use ($validated, $id): void {
+        $jasas = Jasa::whereIn('id', $validated['jasa_ids'] ?? [])->get();
+        $spareparts = Sparepart::whereIn('id', $validated['sparepart_ids'] ?? [])->get();
+        $totalBiaya = $jasas->sum('harga') + $spareparts->sum('harga');
+
+        if ((float) $validated['uang_dibayar'] < (float) $totalBiaya) {
+            return back()->withErrors([
+                'uang_dibayar' => 'Uang yang diterima belum mencukupi total pembayaran.',
+            ])->withInput();
+        }
+
+        DB::transaction(function () use ($validated, $id, $jasas, $spareparts, $totalBiaya): void {
             $transaksi = Transaksi::findOrFail($id);
             $transaksi->update([
                 'id_kasir' => $validated['id_kasir'],
-                'total_biaya' => $validated['total_biaya'],
+                'total_biaya' => $totalBiaya,
+                'uang_dibayar' => $validated['uang_dibayar'],
                 'status_pembayaran' => 'Lunas',
             ]);
 
             $transaksi->jasaDetails()->delete();
-            foreach (Jasa::whereIn('id', $validated['jasa_ids'] ?? [])->get() as $jasa) {
+            foreach ($jasas as $jasa) {
                 $transaksi->jasaDetails()->create([
                     'jasa_id' => $jasa->id,
                     'jumlah' => 1,
@@ -136,7 +183,7 @@ class BengkelController extends Controller
             }
 
             $transaksi->sparepartDetails()->delete();
-            foreach (Sparepart::whereIn('id', $validated['sparepart_ids'] ?? [])->get() as $sparepart) {
+            foreach ($spareparts as $sparepart) {
                 $transaksi->sparepartDetails()->create([
                     'sparepart_id' => $sparepart->id,
                     'jumlah' => 1,
@@ -146,6 +193,21 @@ class BengkelController extends Controller
             }
         });
 
-        return redirect()->back()->with('success', 'Pembayaran berhasil ditambahkan!');
+        return redirect()->route('kasir.struk', $id)->with('success', 'Pembayaran berhasil disimpan.');
+    }
+
+    // Tampilkan struk transaksi yang sudah lunas.
+    public function struk(Transaksi $transaksi)
+    {
+        abort_unless($transaksi->status_pembayaran === 'Lunas', 404);
+
+        $transaksi->load([
+            'antrean.kendaraan',
+            'kasir',
+            'jasaDetails.jasa',
+            'sparepartDetails.sparepart',
+        ]);
+
+        return view('bengkel.struk', compact('transaksi'));
     }
 }
