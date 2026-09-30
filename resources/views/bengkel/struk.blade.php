@@ -15,7 +15,7 @@
     <div class="card mx-auto" style="max-width: 520px;">
         <div class="card-body">
             <div class="text-center border-bottom pb-3 mb-3">
-                <h3 class="mb-1">Sentosa Motor</h3>
+                <h3 class="mb-1">Hendra Otomotif</h3>
                 <div class="text-muted">Struk Pembayaran Servis</div>
                 <div class="small">{{ $transaksi->updated_at->format('d/m/Y H:i') }}</div>
                 <div class="small">TRX-{{ str_pad((string) $transaksi->id, 5, '0', STR_PAD_LEFT) }}</div>

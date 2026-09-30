@@ -96,7 +96,7 @@ class BengkelAccessAndReceiptTest extends TestCase
 
         $this->get(route('kasir.struk', $data['transaksi']))
             ->assertOk()
-            ->assertSee('Sentosa Motor')
+            ->assertSee('Hendra Otomotif')
             ->assertSee('Dina Pelanggan')
             ->assertSee('B 1234 ABC')
             ->assertSee('Servis Rutin')

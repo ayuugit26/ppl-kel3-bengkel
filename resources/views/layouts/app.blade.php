@@ -21,14 +21,14 @@
           <ul class="navbar-nav mr-3">
             <li><a href="#" data-toggle="sidebar" class="nav-link nav-link-lg"><i class="fas fa-bars"></i></a></li>
           </ul>
-          <span class="text-white font-weight-bold h5 mb-0">Sentosa Motor</span>
+          <span class="text-white font-weight-bold h5 mb-0">Hendra Otomotif</span>
         </form>
       </nav>
 
       <div class="main-sidebar sidebar-style-2">
         <aside id="sidebar-wrapper">
           <div class="sidebar-brand">
-            <a href="{{ route('bengkel.index') }}"><i class="fas fa-wrench text-primary mr-2"></i>SENTOSA MOTOR</a>
+            <a href="{{ route('bengkel.index') }}"><i class="fas fa-wrench text-primary mr-2"></i>HENDRA OTOMOTIF</a>
           </div>
           <div class="sidebar-brand sidebar-brand-sm">
             <a href="{{ route('bengkel.index') }}">BM</a>

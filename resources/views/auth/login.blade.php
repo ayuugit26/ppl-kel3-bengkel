@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Login Petugas | Sentosa Motor</title>
+    <title>Login Petugas | Hendra Otomotif</title>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -56,7 +56,7 @@
 <body class="login-page">
     <main class="login-screen">
         <div class="login-panel">
-            <div class="login-brand"><i class="fas fa-wrench"></i>SENTOSA MOTOR</div>
+            <div class="login-brand"><i class="fas fa-wrench"></i>HENDRA OTOMOTIF</div>
 
             <div class="card card-primary login-card">
                 <div class="card-header">
