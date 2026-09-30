@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use App\UserRole;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +16,26 @@ class AuthController extends Controller
         return view('auth.login');
     }
 
+    public function showRegistrationForm(): View
+    {
+        return view('auth.register');
+    }
+
+    public function register(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        $user = User::create($validated + ['role' => UserRole::Customer]);
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return redirect()->route('pelanggan.dashboard');
+    }
+
     public function login(Request $request): RedirectResponse
     {
         $credentials = $request->validate([
@@ -24,7 +46,11 @@ class AuthController extends Controller
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
 
-            return redirect()->intended(route('bengkel.admin'));
+            return redirect()->intended(match (auth()->user()->role) {
+                UserRole::Admin => route('bengkel.admin'),
+                UserRole::Mechanic => route('mekanik.index'),
+                UserRole::Customer => route('pelanggan.dashboard'),
+            });
         }
 
         return back()->withErrors([
@@ -38,6 +64,6 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('bengkel.index');
+        return redirect()->route('login');
     }
 }

@@ -19,11 +19,13 @@
                 <div class="text-muted">Struk Pembayaran Servis</div>
                 <div class="small">{{ $transaksi->updated_at->format('d/m/Y H:i') }}</div>
                 <div class="small">TRX-{{ str_pad((string) $transaksi->id, 5, '0', STR_PAD_LEFT) }}</div>
+                <div class="small">Kode antrean: {{ $transaksi->antrean->kode_antrean ?? '-' }}</div>
             </div>
 
             <div class="mb-3">
                 <div>Nama pelanggan: <strong>{{ $transaksi->antrean->kendaraan->nama_pemilik ?? '-' }}</strong></div>
                 <div>Plat nomor: <strong>{{ $transaksi->antrean->plat_nomor ?? '-' }}</strong></div>
+                <div>Mekanik: {{ $transaksi->antrean->mekanik->nama_karyawan ?? '-' }}</div>
                 <div>Kasir: {{ $transaksi->kasir->nama_karyawan ?? '-' }}</div>
             </div>
 
@@ -49,8 +51,9 @@
 
             <hr>
             <div class="d-flex justify-content-between"><strong>Total</strong><strong>Rp {{ number_format($transaksi->total_biaya, 0, ',', '.') }}</strong></div>
+            <div class="d-flex justify-content-between"><span>Metode pembayaran</span><span>{{ $transaksi->metode_pembayaran }}</span></div>
             <div class="d-flex justify-content-between"><span>Uang diterima</span><span>Rp {{ number_format($transaksi->uang_dibayar ?? 0, 0, ',', '.') }}</span></div>
-            <div class="d-flex justify-content-between"><span>Kembalian</span><span>Rp {{ number_format(max(0, $transaksi->uang_dibayar - $transaksi->total_biaya), 0, ',', '.') }}</span></div>
+            <div class="d-flex justify-content-between"><span>Kembalian</span><span>Rp {{ number_format(max(0, (float) $transaksi->uang_dibayar - (float) $transaksi->total_biaya), 0, ',', '.') }}</span></div>
             <div class="text-center border-top mt-3 pt-3 small">Terima kasih telah mempercayakan servis kepada kami.</div>
         </div>
     </div>

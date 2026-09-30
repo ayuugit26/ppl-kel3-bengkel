@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Kendaraan extends Model
 {
@@ -14,8 +16,13 @@ class Kendaraan extends Model
 
     protected $guarded = [];
 
-    public function antrean()
+    public function antrean(): HasMany
     {
         return $this->hasMany(Antrean::class, 'plat_nomor', 'plat_nomor');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 }

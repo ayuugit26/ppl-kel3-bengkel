@@ -3,92 +3,261 @@
 namespace App\Http\Controllers;
 
 use App\Models\Antrean;
-use App\Models\Jasa;
 use App\Models\Karyawan;
 use App\Models\Kendaraan;
-use App\Models\Sparepart;
 use App\Models\Transaksi;
+use App\Models\User;
+use App\UserRole;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
 class BengkelController extends Controller
 {
-    // Halaman Depan untuk Pelanggan (Lacak Antrean)
-    public function index(Request $request)
+    public function index(Request $request): View
     {
-        $platNomor = strtoupper(trim((string) $request->input('plat_nomor')));
-        $antreans = Antrean::with(['kendaraan', 'mekanik'])
-            ->when($platNomor !== '', fn ($query) => $query->where('plat_nomor', $platNomor))
-            ->orderBy('created_at', 'desc')
+        $search = strtoupper(trim($request->string('q')->toString()));
+        $antreans = collect();
+        $canViewHistory = false;
+
+        if ($search !== '') {
+            $matchingAntrean = Antrean::query()
+                ->where('plat_nomor', $search)
+                ->orWhere('kode_antrean', $search)
+                ->latest('id')
+                ->first();
+
+            if ($matchingAntrean !== null) {
+                $vehicleOwnerId = $matchingAntrean->kendaraan()->value('user_id');
+                $canViewHistory = $request->user()?->role === UserRole::Customer
+                    && (int) $request->user()->id === (int) $vehicleOwnerId;
+                $relations = ['kendaraan', 'mekanik'];
+                if ($canViewHistory) {
+                    $relations = array_merge($relations, [
+                        'transaksi.kasir',
+                        'transaksi.jasaDetails.jasa',
+                        'transaksi.sparepartDetails.sparepart',
+                    ]);
+                }
+
+                $antreans = Antrean::with($relations)
+                    ->where('plat_nomor', $matchingAntrean->plat_nomor)
+                    ->latest('id')
+                    ->get();
+            }
+        }
+
+        return view('bengkel.index', [
+            'antreans' => $antreans,
+            'search' => $search,
+            'canViewHistory' => $canViewHistory,
+            'queueCount' => Antrean::where('status', Antrean::STATUS_QUEUE)->count(),
+            'workingCount' => Antrean::where('status', Antrean::STATUS_WORKING)->count(),
+            'finishedCount' => Antrean::whereIn('status', [Antrean::STATUS_FINISHED, Antrean::STATUS_PAID])->count(),
+        ]);
+    }
+
+    public function pelanggan(Request $request): View
+    {
+        $kendaraans = Kendaraan::query()
+            ->where('user_id', $request->user()->id)
+            ->with([
+                'antrean.mekanik',
+                'antrean.transaksi.jasaDetails.jasa',
+                'antrean.transaksi.sparepartDetails.sparepart',
+            ])
+            ->orderBy('plat_nomor')
             ->get();
 
-        return view('bengkel.index', compact('antreans', 'platNomor'));
+        return view('bengkel.pelanggan', [
+            'kendaraans' => $kendaraans,
+            'customer' => $request->user(),
+        ]);
     }
 
     // Simpan Antrean Baru
-    public function storeAntrean(Request $request)
+    public function storeAntrean(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'plat_nomor' => ['required', 'string', 'max:20'],
             'nama_pemilik' => ['required', 'string', 'max:255'],
+            'jenis_kendaraan' => ['required', Rule::in(['Motor', 'Mobil'])],
             'merk_tipe' => ['required', 'string', 'max:255'],
             'keluhan' => ['required', 'string'],
+            'customer_user_id' => ['nullable', Rule::exists('users', 'id')->where('role', 'pelanggan')],
         ]);
 
         $validated['plat_nomor'] = strtoupper(trim($validated['plat_nomor']));
+        $currentUser = auth()->user();
+        $ownerId = $currentUser->role === UserRole::Customer
+            ? $currentUser->id
+            : ($validated['customer_user_id'] ?? null);
+        if ($currentUser->role === UserRole::Customer) {
+            $validated['nama_pemilik'] = $currentUser->name;
+        }
 
-        // Simpan / update data kendaraan
-        Kendaraan::updateOrCreate(
-            ['plat_nomor' => $validated['plat_nomor']],
-            [
-                'nama_pemilik' => $validated['nama_pemilik'],
-                'jenis_kendaraan' => 'Motor',
-                'merk_tipe' => $validated['merk_tipe'],
-            ]
-        );
+        $antrean = DB::transaction(function () use ($validated, $ownerId): Antrean {
+            $existingVehicle = Kendaraan::find($validated['plat_nomor']);
+            abort_if(
+                $existingVehicle?->user_id !== null
+                    && $ownerId !== null
+                    && (int) $existingVehicle->user_id !== (int) $ownerId,
+                403,
+            );
 
-        // Buat Antrean Baru
-        $antrean = Antrean::create([
-            'plat_nomor' => $validated['plat_nomor'],
-            'keluhan' => $validated['keluhan'],
-            'status' => 'Antre',
-        ]);
+            $kendaraan = Kendaraan::updateOrCreate(
+                ['plat_nomor' => $validated['plat_nomor']],
+                [
+                    'user_id' => $ownerId ?? $existingVehicle?->user_id,
+                    'nama_pemilik' => $validated['nama_pemilik'],
+                    'jenis_kendaraan' => $validated['jenis_kendaraan'],
+                    'merk_tipe' => $validated['merk_tipe'],
+                ],
+            );
 
-        // Otomatis siapkan data transaksi
-        Transaksi::create([
-            'antrean_id' => $antrean->id,
-            'total_biaya' => 0,
-            'status_pembayaran' => 'Belum Bayar',
-        ]);
+            $antrean = Antrean::create([
+                'plat_nomor' => $kendaraan->plat_nomor,
+                'keluhan' => $validated['keluhan'],
+                'status' => Antrean::STATUS_QUEUE,
+            ]);
+            $antrean->update([
+                'kode_antrean' => 'SRV-'.now()->format('ymd').'-'.str_pad((string) $antrean->id, 5, '0', STR_PAD_LEFT),
+            ]);
 
-        return redirect()->back()->with('success', 'Antrean berhasil ditambahkan!');
+            Transaksi::create([
+                'antrean_id' => $antrean->id,
+                'total_biaya' => 0,
+                'status_pembayaran' => 'Belum Bayar',
+            ]);
+
+            return $antrean;
+        });
+
+        if ($currentUser->role === UserRole::Customer) {
+            return redirect()->route('pelanggan.dashboard')
+                ->with('success', 'Antrean berhasil dibuat dengan kode '.$antrean->kode_antrean.'.');
+        }
+
+        return redirect()->route('bengkel.index', ['q' => $antrean->kode_antrean])
+            ->with('success', 'Antrean berhasil dibuat.')
+            ->with('kode_antrean', $antrean->kode_antrean);
     }
 
     // Halaman Dashboard Admin / Mekanik (Kelola Status)
-    public function admin()
+    public function admin(): View
     {
-        $antreans = Antrean::with(['kendaraan.antrean.mekanik', 'mekanik'])->orderBy('id', 'desc')->get();
+        $antreans = Antrean::with(['kendaraan.antrean.mekanik', 'mekanik', 'transaksi'])
+            ->orderByDesc('id')
+            ->get();
         $mekaniks = Karyawan::where('jabatan', 'Mekanik')->get();
+        $users = User::with('karyawan')->orderBy('name')->get();
+        $customers = User::where('role', UserRole::Customer)->orderBy('name')->get();
 
-        return view('bengkel.admin', compact('antreans', 'mekaniks'));
+        return view('bengkel.admin', compact('antreans', 'mekaniks', 'users', 'customers'));
+    }
+
+    public function storeUser(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8'],
+            'role' => ['required', Rule::enum(UserRole::class)],
+            'no_hp' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        DB::transaction(function () use ($validated): void {
+            $role = UserRole::from($validated['role']);
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => $validated['password'],
+                'role' => $role,
+            ]);
+
+            if ($role !== UserRole::Customer) {
+                Karyawan::create([
+                    'user_id' => $user->id,
+                    'nama_karyawan' => $validated['name'],
+                    'no_hp' => $validated['no_hp'] ?? null,
+                    'jabatan' => match ($role) {
+                        UserRole::Admin => 'Admin',
+                        UserRole::Mechanic => 'Mekanik',
+                        UserRole::Customer => throw new \LogicException,
+                    },
+                ]);
+            }
+        });
+
+        return redirect()->route('bengkel.admin')->with('success', 'Akun pengguna berhasil dibuat.');
+    }
+
+    public function updateUser(Request $request, User $user): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user)],
+            'password' => ['nullable', 'string', 'min:8'],
+        ]);
+
+        $user->update(array_filter($validated, fn ($value) => $value !== null && $value !== ''));
+        $user->karyawan?->update(['nama_karyawan' => $validated['name']]);
+
+        return redirect()->route('bengkel.admin')->with('success', 'Data pengguna berhasil diperbarui.');
+    }
+
+    public function destroyUser(User $user): RedirectResponse
+    {
+        abort_unless($user->id !== auth()->id(), 403, 'Akun yang sedang digunakan tidak dapat dihapus.');
+
+        if ($user->karyawan?->jabatan === 'Mekanik'
+            && Antrean::where('id_mekanik', $user->karyawan->id)
+                ->whereIn('status', [Antrean::STATUS_QUEUE, Antrean::STATUS_WORKING])
+                ->exists()) {
+            throw ValidationException::withMessages([
+                'user' => 'Pindahkan antrean aktif mekanik sebelum menghapus akunnya.',
+            ]);
+        }
+
+        $user->delete();
+
+        return redirect()->route('bengkel.admin')->with('success', 'Akun pengguna berhasil dihapus.');
     }
 
     // Tambahkan data mekanik baru.
-    public function storeMekanik(Request $request)
+    public function storeMekanik(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'nama_karyawan' => ['required', 'string', 'max:255'],
             'no_hp' => ['nullable', 'string', 'max:20'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8'],
         ]);
 
-        Karyawan::create($validated + ['jabatan' => 'Mekanik']);
+        DB::transaction(function () use ($validated): void {
+            $user = User::create([
+                'name' => $validated['nama_karyawan'],
+                'email' => $validated['email'],
+                'password' => $validated['password'],
+                'role' => UserRole::Mechanic,
+            ]);
 
-        return redirect()->route('bengkel.admin')->with('success', 'Data mekanik berhasil ditambahkan.');
+            Karyawan::create([
+                'user_id' => $user->id,
+                'nama_karyawan' => $validated['nama_karyawan'],
+                'no_hp' => $validated['no_hp'] ?? null,
+                'jabatan' => 'Mekanik',
+            ]);
+        });
+
+        return redirect()->route('bengkel.admin')->with('success', 'Akun dan data mekanik berhasil dibuat.');
     }
 
     // Perbarui data mekanik yang dipilih.
-    public function updateMekanik(Request $request, Karyawan $mekanik)
+    public function updateMekanik(Request $request, Karyawan $mekanik): RedirectResponse
     {
         abort_unless($mekanik->jabatan === 'Mekanik', 404);
 
@@ -98,106 +267,100 @@ class BengkelController extends Controller
         ]);
 
         $mekanik->update($validated);
+        $mekanik->user?->update(['name' => $validated['nama_karyawan']]);
 
         return redirect()->route('bengkel.admin')->with('success', 'Data mekanik berhasil diperbarui.');
     }
 
     // Hapus mekanik; antrean lama tetap tersimpan tanpa penugasan.
-    public function destroyMekanik(Karyawan $mekanik)
+    public function destroyMekanik(Karyawan $mekanik): RedirectResponse
     {
         abort_unless($mekanik->jabatan === 'Mekanik', 404);
+        $mekanik->user?->delete();
         $mekanik->delete();
 
         return redirect()->route('bengkel.admin')->with('success', 'Data mekanik berhasil dihapus.');
     }
 
     // Update Mekanik & Status Servis
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(Request $request, int $id): RedirectResponse
     {
         $validated = $request->validate([
-            'id_mekanik' => ['nullable', 'exists:karyawans,id'],
-            'status' => ['required', Rule::in(['Antre', 'Sedang Dikerjakan', 'Selesai'])],
+            'id_mekanik' => ['nullable', Rule::exists('karyawans', 'id')->where('jabatan', 'Mekanik')],
         ]);
 
         $antrean = Antrean::findOrFail($id);
-        $antrean->update($validated);
+        abort_unless(in_array($antrean->status, [Antrean::STATUS_QUEUE, Antrean::STATUS_WORKING], true), 409);
+        $antrean->update(['id_mekanik' => $validated['id_mekanik'] ?? null]);
 
-        return redirect()->back()->with('success', 'Status servis berhasil diperbarui!');
+        return redirect()->back()->with('success', 'Penugasan mekanik berhasil diperbarui.');
     }
 
     // Halaman Kasir (Pembayaran)
-    public function kasir()
+    public function kasir(): View
     {
         $transaksis = Transaksi::with([
             'antrean.kendaraan',
             'kasir',
             'jasaDetails.jasa',
             'sparepartDetails.sparepart',
-        ])->orderBy('id', 'desc')->get();
-        $kasirs = Karyawan::where('jabatan', 'Kasir')->get();
-        $jasas = Jasa::orderBy('nama_jasa')->get();
-        $spareparts = Sparepart::where('stok', '>', 0)->orderBy('nama_barang')->get();
+        ])
+            ->whereHas('antrean', fn ($query) => $query->whereIn('status', [Antrean::STATUS_FINISHED, Antrean::STATUS_PAID]))
+            ->orderByDesc('id')
+            ->get();
 
-        return view('bengkel.kasir', compact('transaksis', 'kasirs', 'jasas', 'spareparts'));
+        return view('bengkel.kasir', compact('transaksis'));
     }
 
-    // Bayar Transaksi
-    public function bayar(Request $request, $id)
+    public function bayar(Request $request, Transaksi $transaksi): RedirectResponse
     {
         $validated = $request->validate([
-            'id_kasir' => ['required', Rule::exists('karyawans', 'id')->where('jabatan', 'Kasir')],
-            'uang_dibayar' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
-            'jasa_ids' => ['nullable', 'array'],
-            'jasa_ids.*' => ['integer', 'distinct', 'exists:jasas,id'],
-            'sparepart_ids' => ['nullable', 'array'],
-            'sparepart_ids.*' => ['integer', 'distinct', 'exists:spareparts,id'],
+            'metode_pembayaran' => ['required', Rule::in(['Tunai', 'Non-Tunai'])],
+            'uang_dibayar' => ['nullable', 'required_if:metode_pembayaran,Tunai', 'numeric', 'min:0', 'max:9999999999.99'],
         ]);
 
-        $jasas = Jasa::whereIn('id', $validated['jasa_ids'] ?? [])->get();
-        $spareparts = Sparepart::whereIn('id', $validated['sparepart_ids'] ?? [])->get();
-        $totalBiaya = $jasas->sum('harga') + $spareparts->sum('harga');
+        $user = $request->user();
+        $karyawan = $user->karyawan;
+        abort_if($user->role !== UserRole::Admin, 403);
 
-        if ((float) $validated['uang_dibayar'] < (float) $totalBiaya) {
-            return back()->withErrors([
-                'uang_dibayar' => 'Uang yang diterima belum mencukupi total pembayaran.',
-            ])->withInput();
-        }
+        DB::transaction(function () use ($validated, $transaksi, $karyawan): void {
+            $lockedTransaksi = Transaksi::query()
+                ->with('antrean')
+                ->lockForUpdate()
+                ->findOrFail($transaksi->id);
+            abort_unless(
+                $lockedTransaksi->antrean->status === Antrean::STATUS_FINISHED
+                    && $lockedTransaksi->status_pembayaran === 'Belum Bayar',
+                409,
+            );
 
-        DB::transaction(function () use ($validated, $id, $jasas, $spareparts, $totalBiaya): void {
-            $transaksi = Transaksi::findOrFail($id);
-            $transaksi->update([
-                'id_kasir' => $validated['id_kasir'],
+            $jasaDetails = $lockedTransaksi->jasaDetails()->get();
+            $sparepartDetails = $lockedTransaksi->sparepartDetails()->get();
+            $totalBiaya = $jasaDetails->sum('subtotal') + $sparepartDetails->sum('subtotal');
+            $uangDibayar = $validated['metode_pembayaran'] === 'Tunai'
+                ? (float) $validated['uang_dibayar']
+                : $totalBiaya;
+
+            if ($uangDibayar < $totalBiaya) {
+                throw ValidationException::withMessages([
+                    'uang_dibayar' => 'Uang yang diterima belum mencukupi total pembayaran.',
+                ]);
+            }
+
+            $lockedTransaksi->update([
+                'id_kasir' => $karyawan?->id,
                 'total_biaya' => $totalBiaya,
-                'uang_dibayar' => $validated['uang_dibayar'],
+                'uang_dibayar' => $uangDibayar,
+                'metode_pembayaran' => $validated['metode_pembayaran'],
                 'status_pembayaran' => 'Lunas',
             ]);
-
-            $transaksi->jasaDetails()->delete();
-            foreach ($jasas as $jasa) {
-                $transaksi->jasaDetails()->create([
-                    'jasa_id' => $jasa->id,
-                    'jumlah' => 1,
-                    'harga_satuan' => $jasa->harga,
-                    'subtotal' => $jasa->harga,
-                ]);
-            }
-
-            $transaksi->sparepartDetails()->delete();
-            foreach ($spareparts as $sparepart) {
-                $transaksi->sparepartDetails()->create([
-                    'sparepart_id' => $sparepart->id,
-                    'jumlah' => 1,
-                    'harga_satuan' => $sparepart->harga,
-                    'subtotal' => $sparepart->harga,
-                ]);
-            }
+            $lockedTransaksi->antrean->update(['status' => Antrean::STATUS_PAID]);
         });
 
-        return redirect()->route('kasir.struk', $id)->with('success', 'Pembayaran berhasil disimpan.');
+        return redirect()->route('kasir.struk', $transaksi)->with('success', 'Pembayaran berhasil disimpan.');
     }
 
-    // Tampilkan struk transaksi yang sudah lunas.
-    public function struk(Transaksi $transaksi)
+    public function struk(Transaksi $transaksi): View
     {
         abort_unless($transaksi->status_pembayaran === 'Lunas', 404);
 

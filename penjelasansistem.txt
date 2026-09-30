@@ -1,0 +1,108 @@
+PENJELASAN SISTEM MANAJEMEN BENGKEL DAN ANTREAN SERVIS
+======================================================
+
+1. TUJUAN SISTEM
+
+Aplikasi ini membantu bengkel mencatat kendaraan yang masuk, menugaskan
+mekanik, menyimpan rincian pekerjaan, memantau status servis, memproses
+pembayaran, dan menyimpan riwayat servis kendaraan.
+
+2. ROLE PENGGUNA
+
+Admin
+- Mengelola akun pengguna dan data mekanik.
+- Mendaftarkan antrean kendaraan dan menghubungkannya dengan akun pelanggan.
+- Menetapkan mekanik pada antrean.
+- Mengakses modul kasir, memproses pembayaran, dan mencetak struk.
+- Role Kasir tidak terpisah. Akun kasir menggunakan role Admin.
+
+Mekanik
+- Masuk ke dashboard pengerjaan.
+- Mengambil antrean yang belum ditangani atau melanjutkan antrean yang
+	ditugaskan kepadanya.
+- Mencatat jasa dan sparepart yang digunakan.
+- Mengubah status pekerjaan menjadi selesai.
+
+Pelanggan
+- Mendaftar dengan nama, email, dan kata sandi, lalu masuk ke akun.
+- Mendaftarkan kendaraan dan membuat antrean servis dari dashboard pelanggan.
+- Melihat status dan riwayat lengkap kendaraan yang terhubung ke akunnya.
+
+3. ALUR SERVIS
+
+1. Admin atau pelanggan yang sudah login memasukkan plat nomor, jenis dan
+	 tipe kendaraan, serta keluhan awal. Admin dapat memilih akun pelanggan.
+2. Sistem membuat kendaraan jika belum tersimpan, membuat antrean berstatus
+	 "Antre", menerbitkan kode antrean, dan menyiapkan transaksi.
+3. Admin dapat menetapkan mekanik. Mekanik mengambil antrean dan status berubah
+	 menjadi "Sedang Dikerjakan". Sistem menyimpan identitas mekanik.
+4. Mekanik mencatat jasa dan sparepart. Harga dicatat sebagai snapshot pada
+	 detail transaksi. Stok sparepart berkurang saat pemakaian disimpan; jika
+	 jumlah pemakaian dikoreksi atau item dihapus, stok disesuaikan kembali.
+5. Setelah pekerjaan selesai, mekanik mengubah status menjadi "Selesai".
+6. Admin membuka modul kasir. Total dihitung dari subtotal jasa dan sparepart.
+	 Pembayaran tunai atau non-tunai dicatat, lalu status antrean berubah menjadi
+	 "Lunas". Kasir mencetak struk dari halaman transaksi.
+
+Rangkaian status antrean:
+Antre -> Sedang Dikerjakan -> Selesai -> Lunas
+
+4. PELACAKAN DAN RIWAYAT
+
+- Halaman utama (/) dan /antrean menerima pencarian menggunakan nomor plat
+	atau kode antrean.
+- Pengunjung publik hanya melihat plat yang dicari dan status servis; nama
+	pemilik, keluhan, mekanik, serta rincian barang dan jasa tidak ditampilkan.
+- Pelanggan yang login hanya dapat melihat rincian dan riwayat kendaraan yang
+	memiliki user_id sesuai akunnya.
+- Riwayat disimpan pada data antrean dan detail transaksi, sehingga kunjungan
+	sebelumnya tetap dapat dilihat saat kendaraan kembali.
+- Pembaruan status muncul saat halaman dimuat atau dimuat ulang. Sistem ini
+	belum memakai WebSocket atau pembaruan push otomatis.
+
+5. STRUKTUR DATABASE YANG DIGUNAKAN
+
+Sistem mempertahankan nama tabel lama agar data yang sudah ada tetap dipakai.
+
+- users: akun login, email, kata sandi yang di-hash, dan role admin, mekanik,
+	atau pelanggan.
+- karyawans: profil pegawai; user_id menghubungkan profil Admin/Mekanik dengan
+	akun login. Profil Kasir juga tetap ada, tetapi akun login-nya ber-role Admin.
+- kendaraans: plat_nomor sebagai primary key, data pemilik dan kendaraan, serta
+	user_id opsional untuk menghubungkan kendaraan dengan akun pelanggan.
+- antreans: plat_nomor, kode_antrean, keluhan, id_mekanik, status, dan waktu
+	pencatatan.
+- spareparts: master barang, harga, dan stok.
+- jasas: master jenis jasa dan tarif.
+- transaksis: pembayaran untuk satu antrean, total, uang dibayar, metode bayar,
+	status pembayaran, dan pegawai kasir.
+- transaksi_spareparts: rincian barang, jumlah, harga satuan, dan subtotal.
+- transaksi_jasas: rincian jasa, jumlah, harga satuan, dan subtotal.
+
+Relasi utama:
+users 1--N kendaraans
+kendaraans 1--N antreans
+karyawans 1--N antreans melalui mekanik yang ditugaskan
+antreans 1--1 transaksis
+transaksis 1--N transaksi_spareparts
+transaksis 1--N transaksi_jasas
+
+6. AKUN PENGEMBANGAN
+
+Seeder DatabaseSeeder menyediakan akun berikut:
+- Admin: admin@bengkel.com
+- Kasir: kasir@bengkel.com
+- Mekanik: mekanik@bengkel.com
+- Pelanggan: jojo@bengkel.com
+
+Kata sandi awal akun seed adalah "password". Ganti kata sandi tersebut sebelum
+aplikasi digunakan di lingkungan produksi.
+
+7. MENJALANKAN SEEDER
+
+Untuk membuat atau memperbarui akun seed:
+php artisan db:seed --class=DatabaseSeeder
+
+DatabaseSeeder hanya mengisi master bengkel jika tabel master masih kosong,
+agar menjalankannya kembali tidak menggandakan data sparepart, jasa, atau
+karyawan.

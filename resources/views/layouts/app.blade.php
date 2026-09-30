@@ -41,16 +41,34 @@
               </a>
             </li>
             @auth
-              <li class="{{ request()->routeIs('bengkel.admin') ? 'active' : '' }}">
-                <a class="nav-link" href="{{ route('bengkel.admin') }}">
-                  <i class="fas fa-tools"></i> <span>Admin & Mekanik</span>
-                </a>
-              </li>
-              <li class="{{ request()->routeIs('bengkel.kasir', 'kasir.struk') ? 'active' : '' }}">
-                <a class="nav-link" href="{{ route('bengkel.kasir') }}">
-                  <i class="fas fa-cash-register"></i> <span>Kasir</span>
-                </a>
-              </li>
+              @if(auth()->user()->role->value === 'admin')
+                <li class="{{ request()->routeIs('bengkel.admin') ? 'active' : '' }}">
+                  <a class="nav-link" href="{{ route('bengkel.admin') }}">
+                    <i class="fas fa-tools"></i> <span>Admin</span>
+                  </a>
+                </li>
+              @endif
+              @if(auth()->user()->role->value === 'admin')
+                <li class="{{ request()->routeIs('bengkel.kasir', 'kasir.struk') ? 'active' : '' }}">
+                  <a class="nav-link" href="{{ route('bengkel.kasir') }}">
+                    <i class="fas fa-cash-register"></i> <span>Kasir</span>
+                  </a>
+                </li>
+              @endif
+              @if(auth()->user()->role->value === 'mekanik')
+                <li class="{{ request()->routeIs('mekanik.*') ? 'active' : '' }}">
+                  <a class="nav-link" href="{{ route('mekanik.index') }}">
+                    <i class="fas fa-wrench"></i> <span>Pengerjaan</span>
+                  </a>
+                </li>
+              @endif
+              @if(auth()->user()->role->value === 'pelanggan')
+                <li class="{{ request()->routeIs('pelanggan.dashboard') ? 'active' : '' }}">
+                  <a class="nav-link" href="{{ route('pelanggan.dashboard') }}">
+                    <i class="fas fa-user-circle"></i> <span>Dashboard Pelanggan</span>
+                  </a>
+                </li>
+              @endif
               <li>
                 <form action="{{ route('logout') }}" method="POST" class="px-3 py-2">
                   @csrf

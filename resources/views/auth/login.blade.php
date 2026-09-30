@@ -60,7 +60,7 @@
 
             <div class="card card-primary login-card">
                 <div class="card-header">
-                    <h4 class="w-100 text-center">Login Petugas</h4>
+                    <h4 class="w-100 text-center">Login Pengguna</h4>
                 </div>
                 <div class="card-body">
                     @if($errors->any())
@@ -87,6 +87,7 @@
                             <i class="fas fa-sign-in-alt mr-1"></i>Masuk
                         </button>
                     </form>
+                    <div class="text-center mt-3"><a href="{{ route('register') }}">Daftar akun pelanggan</a></div>
                 </div>
             </div>
 

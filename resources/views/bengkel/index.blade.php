@@ -2,15 +2,15 @@
 
 @section('content')
 <div class="section-header shadow-sm mb-4">
-    <h1>Antrean Servis</h1>
+    <h1>Pelacakan Servis</h1>
 </div>
 
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form action="{{ route('bengkel.index') }}" method="GET" class="form-row align-items-end">
             <div class="form-group col-md-8 mb-md-0">
-                <label for="plat_nomor_cari">Cek status kendaraan</label>
-                <input id="plat_nomor_cari" type="text" name="plat_nomor" class="form-control" value="{{ $platNomor }}" placeholder="Masukkan nomor plat" maxlength="20">
+                <label for="plat_nomor_cari">Nomor plat atau kode antrean</label>
+                <input id="plat_nomor_cari" type="text" name="q" class="form-control" value="{{ $search }}" placeholder="Contoh: B 1234 ABC atau SRV-260930-00001" maxlength="30" required>
             </div>
             <div class="form-group col-md-4 mb-0">
                 <button type="submit" class="btn btn-primary btn-block">
@@ -32,7 +32,7 @@
                             <h4>Total antrean</h4>
                 </div>
                 <div class="card-body">
-                    {{ $antreans->count() }}
+                    {{ $queueCount }}
                 </div>
             </div>
         </div>
@@ -47,7 +47,7 @@
                             <h4>Sedang dikerjakan</h4>
                 </div>
                 <div class="card-body">
-                    {{ $antreans->where('status', 'Sedang Dikerjakan')->count() }}
+                    {{ $workingCount }}
                 </div>
             </div>
         </div>
@@ -62,7 +62,7 @@
                             <h4>Selesai</h4>
                 </div>
                 <div class="card-body">
-                    {{ $antreans->where('status', 'Selesai')->count() }}
+                    {{ $finishedCount }}
                 </div>
             </div>
         </div>
@@ -70,6 +70,7 @@
 </div>
 
 <div class="row">
+    @if(auth()->check() && auth()->user()->role->value === 'admin')
     <div class="col-lg-4 col-md-12">
         <div class="card card-primary shadow-sm">
             <div class="card-header">
@@ -105,7 +106,14 @@
                         <input type="text" name="nama_pemilik" class="form-control" value="{{ old('nama_pemilik') }}" placeholder="Nama Pelanggan" required>
                     </div>
                     <div class="form-group">
-                        <label>Tipe motor</label>
+                        <label>Jenis kendaraan</label>
+                        <select name="jenis_kendaraan" class="form-control" required>
+                            <option value="Motor" {{ old('jenis_kendaraan') === 'Motor' ? 'selected' : '' }}>Motor</option>
+                            <option value="Mobil" {{ old('jenis_kendaraan') === 'Mobil' ? 'selected' : '' }}>Mobil</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Merk dan tipe</label>
                         <input type="text" name="merk_tipe" class="form-control" value="{{ old('merk_tipe') }}" placeholder="Contoh: Vario 150" required>
                     </div>
                     <div class="form-group">
@@ -119,46 +127,80 @@
             </div>
         </div>
     </div>
+    @endif
 
-    <div class="col-lg-8 col-md-12">
+    <div class="{{ auth()->check() && auth()->user()->role->value === 'admin' ? 'col-lg-8' : 'col-12' }} col-md-12">
         <div class="card card-dark shadow-sm">
             <div class="card-header">
-                <h4><i class="fas fa-list mr-2"></i>Antrean hari ini</h4>
+                <h4><i class="fas fa-list mr-2"></i>Riwayat Servis Kendaraan</h4>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-striped text-center mb-0">
                         <thead>
                             <tr>
-                                <th>No</th>
+                                @if($canViewHistory)
+                                    <th>No</th>
+                                    <th>Kode antrean</th>
+                                @endif
                                 <th>Plat Nomor</th>
-                                <th>Kendaraan & Pemilik</th>
-                                <th>Keluhan</th>
-                                <th>Mekanik</th>
+                                @if($canViewHistory)
+                                    <th>Kendaraan & Pemilik</th>
+                                    <th>Keluhan</th>
+                                    <th>Mekanik</th>
+                                @endif
                                 <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
                             @forelse($antreans as $index => $item)
                             <tr>
-                                <td>{{ $index + 1 }}</td>
+                                @if($canViewHistory)
+                                    <td>{{ $index + 1 }}</td>
+                                    <td><span class="badge badge-dark p-2">{{ $item->kode_antrean }}</span></td>
+                                @endif
                                 <td><span class="badge badge-dark p-2">{{ $item->plat_nomor }}</span></td>
-                                <td>{{ $item->kendaraan->merk_tipe ?? '-' }} <br><small class="text-muted">({{ $item->kendaraan->nama_pemilik ?? '-' }})</small></td>
-                                <td>{{ $item->keluhan }}</td>
-                                <td><span class="badge badge-light border">{{ $item->mekanik->nama_karyawan ?? 'Belum Ada' }}</span></td>
+                                @if($canViewHistory)
+                                    <td>{{ $item->kendaraan->merk_tipe ?? '-' }} <br><small class="text-muted">({{ $item->kendaraan->nama_pemilik ?? '-' }})</small></td>
+                                    <td>{{ $item->keluhan }}</td>
+                                    <td><span class="badge badge-light border">{{ $item->mekanik->nama_karyawan ?? 'Belum Ada' }}</span></td>
+                                @endif
                                 <td>
-                                    @if($item->status == 'Antre')
-                                        <span class="badge badge-warning">Antre</span>
-                                    @elseif($item->status == 'Sedang Dikerjakan')
-                                        <span class="badge badge-info">Sedang Dikerjakan</span>
-                                    @else
-                                        <span class="badge badge-success">Selesai</span>
+                                    @php($tahap = [
+                                        'Antre' => 0,
+                                        'Sedang Dikerjakan' => 1,
+                                        'Selesai' => 2,
+                                        'Lunas' => 3,
+                                    ][$item->status] ?? 0)
+                                    <div class="font-weight-bold mb-1">{{ $item->status }}</div>
+                                    <div class="progress" style="height: 6px;">
+                                        <div class="progress-bar {{ $item->status === 'Lunas' ? 'bg-success' : 'bg-primary' }}" role="progressbar" style="width: {{ (($tahap + 1) / 4) * 100 }}%" aria-valuenow="{{ $tahap + 1 }}" aria-valuemin="0" aria-valuemax="4"></div>
+                                    </div>
+                                    @if($canViewHistory)
+                                        <small class="text-muted">Mekanik: {{ $item->mekanik->nama_karyawan ?? 'Menunggu penugasan' }}</small>
+                                    @endif
+                                    @if($canViewHistory && ($item->transaksi?->jasaDetails->isNotEmpty() || $item->transaksi?->sparepartDetails->isNotEmpty()))
+                                        <details class="mt-2 text-left">
+                                            <summary>Rincian servis</summary>
+                                            @foreach($item->transaksi->jasaDetails as $detail)
+                                                <div>{{ $detail->jumlah }}x {{ $detail->jasa->nama_jasa }}</div>
+                                            @endforeach
+                                            @foreach($item->transaksi->sparepartDetails as $detail)
+                                                <div>{{ $detail->jumlah }}x {{ $detail->sparepart->nama_barang }}</div>
+                                            @endforeach
+                                        </details>
                                     @endif
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="6" class="text-center py-4 text-muted">Belum ada antrean hari ini.</td>
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    @if($search === '')
+                                        Masukkan nomor plat atau kode antrean untuk melihat status servis.
+                                    @else
+                                        Tidak ditemukan riwayat servis untuk pencarian tersebut.
+                                    @endif
+                                </td>
                             </tr>
                             @endforelse
                         </tbody>
